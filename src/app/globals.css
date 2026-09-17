@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background-color: #f2f4eb;
+  color: #262a1f;
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3.5 py-2 text-sm font-semibold text-text hover:bg-surface-2 disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn border-accent bg-accent text-white hover:bg-accent-dark;
+  }
+  .card {
+    @apply rounded-xl border border-border bg-surface p-5;
+  }
+  .field-label {
+    @apply mb-1 block text-[11px] font-medium uppercase tracking-wide text-text-faint;
+  }
+  .field-input {
+    @apply w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus:outline-none focus:ring-2 focus:ring-accent;
+  }
+  .pill {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold;
+  }
+}
