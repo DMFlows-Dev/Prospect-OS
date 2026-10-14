@@ -1,298 +1,252 @@
 import { notFound } from "next/navigation";
 import {
   getActivities,
-  getCampaigns,
-  getHubspotSyncLogs,
+  getChannelPlaybook,
+  getCurrentProfile,
   getIndustries,
   getLifecycleHistory,
   getLifecycleStages,
   getProfiles,
   getProspect,
-  getQualification,
+  getProspectSequence,
   getServiceLines,
 } from "@/lib/data";
-import { changeLifecycleStage, logActivity, markQualified, updateProspectFields } from "@/lib/actions/prospects";
-import { StagePill } from "@/components/StagePill";
+import { markQualified } from "@/lib/actions/prospects";
+import { STEPPER_LABELS, activityLabel, channelLabel, parseChannel, stepperIndex } from "@/lib/channels";
+import { CollapsiblePane } from "@/components/CollapsiblePane";
+import { LocalTime } from "@/components/LocalTime";
+import { ProfileForm } from "@/components/prospect/ProfileForm";
+import { ChannelSelect, StepCard } from "@/components/prospect/SequenceCards";
+import { DeleteProspectButton, LogMessageForm, StageSelect, SuggestBox } from "@/components/prospect/ActivityTools";
 
-const ACTIVITY_TYPES: { value: string; label: string }[] = [
-  { value: "connection_sent", label: "Connection request sent" },
-  { value: "connection_accepted", label: "Connection accepted" },
-  { value: "message_sent", label: "LinkedIn message sent" },
-  { value: "message_received", label: "LinkedIn message received" },
-  { value: "inmail_sent", label: "InMail sent" },
-  { value: "inmail_received", label: "InMail received" },
-  { value: "email_sent", label: "Email sent" },
-  { value: "email_replied", label: "Email replied" },
-  { value: "instagram_dm_sent", label: "Instagram DM sent" },
-  { value: "instagram_dm_received", label: "Instagram DM received" },
-  { value: "follow_up_sent", label: "Follow-up sent" },
-  { value: "call_completed", label: "Call completed" },
-  { value: "meeting_scheduled", label: "Meeting scheduled" },
-  { value: "note_added", label: "Note" },
-];
-
-function fmt(iso: string) {
-  return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-}
-
-export default async function ProspectDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ProspectDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ channel?: string }>;
+}) {
   const { id } = await params;
-  const [prospect, activities, history, qualification, syncLogs, stages, industries, serviceLines, campaigns, profiles] =
-    await Promise.all([
-      getProspect(id),
-      getActivities(id),
-      getLifecycleHistory(id),
-      getQualification(id),
-      getHubspotSyncLogs(id),
-      getLifecycleStages(),
-      getIndustries(),
-      getServiceLines(),
-      getCampaigns(),
-      getProfiles(),
-    ]);
+  const sp = await searchParams;
+  const channel = parseChannel(sp.channel);
+
+  const [prospect, activities, history, stages, industries, serviceLines, profiles, me, playbook, sequence] = await Promise.all([
+    getProspect(id),
+    getActivities(id),
+    getLifecycleHistory(id),
+    getLifecycleStages(),
+    getIndustries(),
+    getServiceLines(),
+    getProfiles(),
+    getCurrentProfile(),
+    getChannelPlaybook(channel),
+    getProspectSequence(id, channel),
+  ]);
 
   if (!prospect) notFound();
 
   const stageById = new Map(stages.map((s) => [s.id, s]));
   const currentStage = prospect.lifecycle_stage_id ? stageById.get(prospect.lifecycle_stage_id) : null;
+  const stepIdx = stepperIndex(currentStage?.key);
+  const steps = playbook?.steps ?? [];
+  const bodyByKey = new Map((sequence?.steps ?? []).map((s) => [s.key, s.body]));
+  const canManage = me?.role === "admin" || me?.role === "manager";
 
-  const boundUpdateFields = async (formData: FormData) => {
+  const markInterested = async () => {
     "use server";
-    await updateProspectFields(id, formData);
+    const fd = new FormData();
+    fd.set("qualification_status", "interested");
+    await markQualified(id, fd);
   };
-  const boundLogActivity = async (formData: FormData) => {
+  const markQualifiedLead = async () => {
     "use server";
-    await logActivity(id, formData);
+    const fd = new FormData();
+    fd.set("qualification_status", "qualified");
+    await markQualified(id, fd);
   };
-  const boundMarkQualified = async (formData: FormData) => {
-    "use server";
-    await markQualified(id, formData);
-  };
-  const boundChangeStage = async (formData: FormData) => {
-    "use server";
-    const newStageId = String(formData.get("lifecycle_stage_id") ?? "");
-    if (!newStageId) return;
-    await changeLifecycleStage(id, newStageId, "Manual update by BDR");
-  };
+
+  type TimelineItem =
+    | { kind: "activity"; at: string; id: string; label: string; inbound: boolean; content: string | null; notes: string | null }
+    | { kind: "stage"; at: string; id: string; text: string; reason: string | null };
+
+  const timeline: TimelineItem[] = [
+    ...activities.map((a): TimelineItem => ({
+      kind: "activity",
+      at: a.created_at,
+      id: a.id,
+      label: activityLabel(a.activity_type),
+      inbound: a.direction === "inbound",
+      content: a.content,
+      notes: a.notes,
+    })),
+    ...history.map((h): TimelineItem => ({
+      kind: "stage",
+      at: h.created_at,
+      id: h.id,
+      text: `${h.previous_stage_id ? (stageById.get(h.previous_stage_id)?.label ?? "—") : "—"} → ${h.new_stage_id ? (stageById.get(h.new_stage_id)?.label ?? "—") : "—"}`,
+      reason: h.reason,
+    })),
+  ].sort((a, b) => (a.at < b.at ? 1 : -1));
 
   return (
-    <div className="mx-auto grid max-w-6xl grid-cols-3 gap-6 px-8 py-8">
-      {/* Left: profile + editable fields */}
-      <div className="col-span-1 space-y-4">
-        <div className="card">
-          <h1 className="text-lg font-bold">{prospect.name}</h1>
-          {prospect.title && <p className="text-sm text-text-dim">{prospect.title}</p>}
-          {prospect.company && <p className="text-sm text-text-dim">{prospect.company}</p>}
-          <div className="mt-3">
-            <StagePill stage={currentStage} />
+    <>
+      {/* Centre: header, stage, profile, gaps, sequence */}
+      <div className="min-w-0 flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-3xl space-y-5 px-8 py-6">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <h1 className="truncate text-2xl font-bold">{prospect.name}</h1>
+              <p className="truncate text-sm text-text-dim">{[prospect.title, prospect.company].filter(Boolean).join(" · ") || "No title or company yet"}</p>
+            </div>
+            {me?.role === "admin" && <DeleteProspectButton prospectId={prospect.id} name={prospect.name} />}
           </div>
-          <div className="mt-3 space-y-1 text-xs text-text-faint">
-            {prospect.linkedin_url && (
-              <div>
-                <a href={prospect.linkedin_url} target="_blank" rel="noreferrer" className="hover:text-accent-dark">
-                  LinkedIn ↗
-                </a>
+
+          <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+            <ol className="flex min-w-[360px] flex-1 items-start justify-between">
+              {STEPPER_LABELS.map((label, i) => {
+                const reached = i <= stepIdx;
+                const current = i === stepIdx;
+                return (
+                  <li key={label} className="flex flex-1 flex-col items-center gap-1.5">
+                    <span
+                      className={`h-3 w-3 rounded-full border-2 ${
+                        current ? "border-info bg-info" : reached ? "border-info/60 bg-info/60" : "border-border bg-transparent"
+                      }`}
+                    />
+                    <span className={`text-xs ${current ? "font-semibold text-text" : "text-text-faint"}`}>{label}</span>
+                  </li>
+                );
+              })}
+            </ol>
+            <StageSelect prospectId={prospect.id} stages={stages} currentId={prospect.lifecycle_stage_id} />
+          </div>
+
+          <ProfileForm
+            key={prospect.updated_at}
+            prospect={prospect}
+            channel={channel}
+            channelLabel={channelLabel(channel)}
+            industries={industries}
+            serviceLines={serviceLines}
+            profiles={profiles}
+            canAssign={canManage}
+          />
+
+          <div className="card">
+            <ChannelSelect channel={channel} />
+          </div>
+
+          {sequence && sequence.gaps.length > 0 ? (
+            <div className="card">
+              <h2 className="mb-3 text-base font-bold">Identified gaps &amp; opportunities</h2>
+              <ul className="list-disc space-y-2 pl-5 text-[15px] leading-relaxed">
+                {sequence.gaps.map((g, i) => (
+                  <li key={i}>{g}</li>
+                ))}
+              </ul>
+              {sequence.rationale && <p className="mt-4 text-sm leading-relaxed text-text-faint">{sequence.rationale}</p>}
+            </div>
+          ) : (
+            <div className="card text-sm text-text-faint">
+              Gaps &amp; opportunities appear here once you click <b className="text-text-dim">Extract &amp; draft sequence</b> — the AI reads the profile and
+              company text above.
+            </div>
+          )}
+
+          <div className="card">
+            <h2 className="mb-4 text-base font-bold">{channelLabel(channel)} sequence</h2>
+            {steps.length === 0 ? (
+              <p className="text-sm text-text-faint">
+                No steps are set up for this channel yet.{" "}
+                {me?.role === "admin" ? "Add them under Playbook." : "Ask an admin to add them under Playbook."}
+              </p>
+            ) : (
+              <div className="space-y-4">
+                {steps.map((s, i) => (
+                  <StepCard
+                    key={`${channel}-${s.key}-${sequence?.updated_at ?? "none"}`}
+                    prospectId={prospect.id}
+                    channel={channel}
+                    index={i}
+                    stepKey={s.key}
+                    label={s.label}
+                    hint={s.hint}
+                    maxChars={s.max_chars}
+                    initialBody={bodyByKey.get(s.key) ?? ""}
+                  />
+                ))}
               </div>
             )}
-            {prospect.email && <div>{prospect.email}</div>}
           </div>
         </div>
-
-        <div className="card">
-          <h3 className="mb-3 text-sm font-bold">Move lifecycle stage</h3>
-          <form action={boundChangeStage} className="flex gap-2">
-            <select name="lifecycle_stage_id" defaultValue={prospect.lifecycle_stage_id ?? ""} className="field-input">
-              {stages.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-            <button type="submit" className="btn">
-              Update
-            </button>
-          </form>
-          <p className="mt-2 text-xs text-text-faint">Every change here is logged in the history below.</p>
-        </div>
-
-        <div className="card">
-          <h3 className="mb-3 text-sm font-bold">Profile</h3>
-          <form action={boundUpdateFields} className="space-y-3">
-            <div>
-              <label className="field-label">Name</label>
-              <input name="name" defaultValue={prospect.name} className="field-input" />
-            </div>
-            <div>
-              <label className="field-label">Title</label>
-              <input name="title" defaultValue={prospect.title ?? ""} className="field-input" />
-            </div>
-            <div>
-              <label className="field-label">Company</label>
-              <input name="company" defaultValue={prospect.company ?? ""} className="field-input" />
-            </div>
-            <div>
-              <label className="field-label">LinkedIn URL</label>
-              <input name="linkedin_url" defaultValue={prospect.linkedin_url ?? ""} className="field-input" />
-            </div>
-            <div>
-              <label className="field-label">Email</label>
-              <input name="email" defaultValue={prospect.email ?? ""} className="field-input" />
-            </div>
-            <div>
-              <label className="field-label">Industry</label>
-              <select name="industry_id" defaultValue={prospect.industry_id ?? ""} className="field-input">
-                <option value="">—</option>
-                {industries.map((i) => (
-                  <option key={i.id} value={i.id}>
-                    {i.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="field-label">Assigned BDR</label>
-              <select name="assigned_bdr_id" defaultValue={prospect.assigned_bdr_id ?? ""} className="field-input">
-                <option value="">Unassigned</option>
-                {profiles.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="field-label">Pain points</label>
-              <textarea name="pain_points" defaultValue={prospect.pain_points ?? ""} rows={2} className="field-input" />
-            </div>
-            <button type="submit" className="btn">
-              Save
-            </button>
-          </form>
-        </div>
-
-        {prospect.hubspot_contact_id ? (
-          <div className="card">
-            <h3 className="mb-1 text-sm font-bold">HubSpot</h3>
-            <p className="text-xs text-text-dim">Synced — contact {prospect.hubspot_contact_id}</p>
-          </div>
-        ) : (
-          <div className="card">
-            <h3 className="mb-1 text-sm font-bold">HubSpot</h3>
-            <p className="text-xs text-text-faint">Not synced yet. Sync ships in Phase 4.</p>
-          </div>
-        )}
       </div>
 
-      {/* Right: qualify + timeline */}
-      <div className="col-span-2 space-y-4">
-        {prospect.qualification_status === "unqualified" || prospect.qualification_status === "interested" ? (
-          <div className="card">
-            <h3 className="mb-1 text-sm font-bold">Mark interested or qualified</h3>
-            <p className="mb-3 text-xs text-text-faint">
-              Every field below is optional — leave anything unknown blank rather than guessing.
-            </p>
-            <form action={boundMarkQualified} className="space-y-3">
-              <div className="flex gap-4 text-sm">
-                <label className="flex items-center gap-1.5">
-                  <input type="radio" name="qualification_status" value="interested" defaultChecked /> Interested
-                </label>
-                <label className="flex items-center gap-1.5">
-                  <input type="radio" name="qualification_status" value="qualified" /> Qualified
-                </label>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <input name="pain_point" placeholder="Pain point" className="field-input" />
-                <input name="service_of_interest" placeholder="Service of interest" className="field-input" />
-                <input name="budget" placeholder="Budget (if known)" className="field-input" />
-                <input name="timeline" placeholder="Timeline (if known)" className="field-input" />
-                <input name="decision_maker_status" placeholder="Decision-maker status" className="field-input" />
-                <input name="next_action" placeholder="Next action" className="field-input" />
-              </div>
-              <textarea name="notes" placeholder="Qualification notes" rows={2} className="field-input" />
-              <button type="submit" className="btn-primary">
-                Mark lead
+      {/* Right: activity */}
+      <CollapsiblePane
+        side="right"
+        label="Activity"
+        storageKey="pw-activity-collapsed"
+        expandedClassName="w-[340px] border-l border-border bg-bg"
+        contentClassName="space-y-4 overflow-y-auto p-4"
+      >
+        <h2 className="px-1 text-sm font-bold">Activity</h2>
+
+        <div className="card">
+          <h3 className="text-sm font-bold">Mark lead</h3>
+          <p className="mt-1 text-xs text-text-faint">Only once there's real evidence — a reply, a signal — not a guess.</p>
+          <div className="mt-3 flex gap-2">
+            <form action={markInterested}>
+              <button type="submit" className="btn" disabled={prospect.qualification_status === "interested" || prospect.qualification_status === "qualified"}>
+                Mark Interested
+              </button>
+            </form>
+            <form action={markQualifiedLead}>
+              <button type="submit" className="btn-primary" disabled={prospect.qualification_status === "qualified"}>
+                Mark Qualified
               </button>
             </form>
           </div>
-        ) : (
-          <div className="card">
-            <h3 className="text-sm font-bold">
-              Marked <span className="capitalize">{prospect.qualification_status}</span>
-            </h3>
-            {qualification && (
-              <div className="mt-2 space-y-1 text-sm text-text-dim">
-                {qualification.pain_point && <p><b>Pain point:</b> {qualification.pain_point}</p>}
-                {qualification.service_of_interest && <p><b>Interested in:</b> {qualification.service_of_interest}</p>}
-                {qualification.next_action && <p><b>Next action:</b> {qualification.next_action}</p>}
-                {qualification.notes && <p className="text-text-faint">{qualification.notes}</p>}
-              </div>
-            )}
-          </div>
-        )}
-
-        <div className="card">
-          <h3 className="mb-3 text-sm font-bold">Log an activity</h3>
-          <form action={boundLogActivity} className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <select name="activity_type" className="field-input" defaultValue="note_added">
-                {ACTIVITY_TYPES.map((t) => (
-                  <option key={t.value} value={t.value}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
-              <select name="direction" className="field-input" defaultValue="outbound">
-                <option value="outbound">Outbound (I sent this)</option>
-                <option value="inbound">Inbound (they sent this)</option>
-              </select>
-            </div>
-            <textarea name="content" placeholder="Paste the message, or describe what happened…" rows={3} className="field-input" />
-            <button type="submit" className="btn-primary">
-              Log activity
-            </button>
-          </form>
+          {prospect.qualification_status !== "unqualified" && (
+            <p className="mt-2 text-xs capitalize text-accent-dark">Currently {prospect.qualification_status}</p>
+          )}
         </div>
+
+        <SuggestBox prospectId={prospect.id} channel={channel} />
+
+        <LogMessageForm prospectId={prospect.id} channel={channel} stepOptions={steps.map((s) => ({ key: s.key, label: s.label }))} />
 
         <div className="card">
           <h3 className="mb-3 text-sm font-bold">Timeline</h3>
-          {activities.length === 0 ? (
+          {timeline.length === 0 ? (
             <p className="text-sm text-text-faint">Nothing logged yet.</p>
           ) : (
             <ul className="space-y-3">
-              {activities.map((a) => (
-                <li key={a.id} className="border-b border-border pb-3 last:border-0 last:pb-0">
-                  <div className="flex items-center gap-2 text-xs text-text-faint">
-                    <span className={`h-1.5 w-1.5 rounded-full ${a.direction === "inbound" ? "bg-info" : "bg-accent"}`} />
-                    <span className="font-medium text-text-dim">{a.activity_type.replaceAll("_", " ")}</span>
-                    <span>{fmt(a.created_at)}</span>
-                  </div>
-                  {a.content && <p className="mt-1 whitespace-pre-wrap text-sm">{a.content}</p>}
-                </li>
-              ))}
+              {timeline.map((t) =>
+                t.kind === "activity" ? (
+                  <li key={t.id} className="border-b border-border pb-3 last:border-0 last:pb-0">
+                    <div className="flex items-center gap-2 text-xs text-text-faint">
+                      <span className={`h-1.5 w-1.5 flex-none rounded-full ${t.inbound ? "bg-info" : "bg-accent"}`} />
+                      <span className="font-medium text-text-dim">{t.label}</span>
+                      <span className="ml-auto flex-none"><LocalTime iso={t.at} /></span>
+                    </div>
+                    {t.content && <p className="mt-1.5 whitespace-pre-wrap text-sm">{t.content}</p>}
+                    {!t.content && t.notes && <p className="mt-1.5 text-xs text-text-faint">{t.notes}</p>}
+                  </li>
+                ) : (
+                  <li key={t.id} className="border-b border-border pb-3 text-xs text-text-faint last:border-0 last:pb-0">
+                    <div className="flex items-center gap-2">
+                      <span className="h-1.5 w-1.5 flex-none rounded-full bg-warn" />
+                      <span className="font-medium text-text-dim">{t.text}</span>
+                      <span className="ml-auto flex-none"><LocalTime iso={t.at} /></span>
+                    </div>
+                    {t.reason && <p className="mt-1">{t.reason}</p>}
+                  </li>
+                )
+              )}
             </ul>
           )}
         </div>
-
-        <div className="card">
-          <h3 className="mb-3 text-sm font-bold">Lifecycle history</h3>
-          {history.length === 0 ? (
-            <p className="text-sm text-text-faint">No stage changes yet.</p>
-          ) : (
-            <ul className="space-y-2 text-sm text-text-dim">
-              {history.map((h) => (
-                <li key={h.id} className="flex items-center justify-between">
-                  <span>
-                    {h.previous_stage_id ? stageById.get(h.previous_stage_id)?.label ?? "—" : "—"} →{" "}
-                    <b className="text-text">{h.new_stage_id ? stageById.get(h.new_stage_id)?.label : "—"}</b>
-                    {h.reason && <span className="text-text-faint"> · {h.reason}</span>}
-                  </span>
-                  <span className="text-xs text-text-faint">{fmt(h.created_at)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
-    </div>
+      </CollapsiblePane>
+    </>
   );
 }

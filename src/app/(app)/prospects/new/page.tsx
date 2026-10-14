@@ -10,7 +10,8 @@ export default async function NewProspectPage() {
   ]);
 
   return (
-    <div className="mx-auto max-w-2xl px-8 py-8">
+    <div className="min-w-0 flex-1 overflow-y-auto px-8 py-8">
+      <div className="mx-auto max-w-2xl">
       <h1 className="mb-6 text-2xl font-bold">New prospect</h1>
       <div className="card">
         <form action={createProspect} className="space-y-5">
@@ -28,8 +29,12 @@ export default async function NewProspectPage() {
               <input name="company" className="field-input" />
             </div>
             <div>
-              <label className="field-label">LinkedIn URL</label>
+              <label className="field-label">LinkedIn profile URL</label>
               <input name="linkedin_url" className="field-input" placeholder="https://linkedin.com/in/…" />
+            </div>
+            <div>
+              <label className="field-label">Company LinkedIn URL</label>
+              <input name="linkedin_company_url" className="field-input" placeholder="https://linkedin.com/company/…" />
             </div>
             <div>
               <label className="field-label">Instagram URL</label>
@@ -98,6 +103,7 @@ export default async function NewProspectPage() {
             Add prospect
           </button>
         </form>
+      </div>
       </div>
     </div>
   );

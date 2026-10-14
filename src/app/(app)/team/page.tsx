@@ -1,24 +1,51 @@
 import { redirect } from "next/navigation";
 import { getCurrentProfile, getProfiles } from "@/lib/data";
-import { updateTeamMember } from "@/lib/actions/team";
+import { addTeamMember, updateTeamMember } from "@/lib/actions/team";
 import type { UserRole, UserStatus } from "@/types/database";
 
 const ROLES: UserRole[] = ["bdr", "manager", "admin"];
 const STATUSES: UserStatus[] = ["invited", "active", "disabled"];
 
-export default async function TeamPage() {
+export default async function TeamPage({ searchParams }: { searchParams: Promise<{ error?: string; added?: string }> }) {
   const me = await getCurrentProfile();
   if (me?.role !== "admin") redirect("/dashboard");
 
+  const sp = await searchParams;
   const profiles = await getProfiles();
 
   return (
     <div className="mx-auto max-w-3xl px-8 py-8">
       <h1 className="mb-1 text-2xl font-bold">Team</h1>
       <p className="mb-6 text-sm text-text-dim">
-        Anyone who has signed in once via the magic link on /login shows up here as <b>Invited</b> — set their role
-        and mark them Active to give them access.
+        Add a BDR below with a temporary password — they can sign in straight away at /login with "Use a password instead". Anyone who signs in via
+        magic link shows up as <b>Invited</b> until you activate them.
       </p>
+
+      {sp.error && <div className="mb-4 rounded-lg border border-danger/40 bg-danger-soft px-4 py-3 text-sm text-danger">{sp.error}</div>}
+      {sp.added && (
+        <div className="mb-4 rounded-lg border border-accent/40 bg-accent-soft px-4 py-3 text-sm text-accent-dark">
+          Added {sp.added}. Share the temporary password with them directly.
+        </div>
+      )}
+
+      <form action={addTeamMember} className="card mb-6">
+        <h2 className="mb-3 text-base font-bold">Add team member</h2>
+        <div className="grid grid-cols-2 gap-3">
+          <input name="name" required placeholder="Full name" className="field-input" />
+          <input name="email" type="email" required placeholder="Email" className="field-input" />
+          <input name="password" type="text" required minLength={8} placeholder="Temporary password (8+ characters)" className="field-input" />
+          <select name="role" defaultValue="bdr" className="field-input">
+            {ROLES.map((r) => (
+              <option key={r} value={r} className="capitalize">
+                {r}
+              </option>
+            ))}
+          </select>
+        </div>
+        <button type="submit" className="btn-primary mt-3">
+          Add member
+        </button>
+      </form>
 
       <div className="overflow-hidden rounded-xl border border-border">
         <table className="w-full text-sm">

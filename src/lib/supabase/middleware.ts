@@ -7,6 +7,11 @@ import { NextResponse, type NextRequest } from "next/server";
  * middleware.ts — see that file for the matcher config.
  */
 export async function updateSession(request: NextRequest) {
+  // The Chrome extension authenticates with its own token, not a session cookie.
+  if (request.nextUrl.pathname.startsWith("/api/extension")) {
+    return NextResponse.next({ request });
+  }
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(

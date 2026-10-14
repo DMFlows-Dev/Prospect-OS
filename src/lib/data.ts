@@ -1,7 +1,13 @@
 import { createClient } from "@/lib/supabase/server";
+import { DEFAULT_AI_MODEL, isKnownModel } from "@/lib/ai/models";
 import type {
   Activity,
+  BdrInstruction,
   Campaign,
+  ChannelKey,
+  ChannelPlaybook,
+  ExtensionToken,
+  ProspectSequence,
   HubspotSyncLog,
   Industry,
   LifecycleHistoryEntry,
@@ -129,4 +135,52 @@ export async function getActivityCounts(since: string, bdrId?: string) {
   const counts: Record<string, number> = {};
   for (const row of rows) counts[row.activity_type] = (counts[row.activity_type] ?? 0) + 1;
   return counts;
+}
+
+export async function getChannelPlaybooks(): Promise<ChannelPlaybook[]> {
+  const supabase = await createClient();
+  const { data } = await supabase.from("channel_playbooks").select("*");
+  return (data as ChannelPlaybook[]) ?? [];
+}
+
+export async function getChannelPlaybook(channel: ChannelKey): Promise<ChannelPlaybook | null> {
+  const supabase = await createClient();
+  const { data } = await supabase.from("channel_playbooks").select("*").eq("channel", channel).maybeSingle();
+  return (data as ChannelPlaybook) ?? null;
+}
+
+export async function getBdrInstructions(profileId: string): Promise<BdrInstruction[]> {
+  const supabase = await createClient();
+  const { data } = await supabase.from("bdr_instructions").select("*").eq("profile_id", profileId);
+  return (data as BdrInstruction[]) ?? [];
+}
+
+export async function getProspectSequence(prospectId: string, channel: ChannelKey): Promise<ProspectSequence | null> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("prospect_sequences")
+    .select("*")
+    .eq("prospect_id", prospectId)
+    .eq("channel", channel)
+    .maybeSingle();
+  return (data as ProspectSequence) ?? null;
+}
+
+/** The model the admin picked in the Playbook; falls back to the default. */
+export async function getAiModel(): Promise<string> {
+  const supabase = await createClient();
+  const { data } = await supabase.from("app_settings").select("value").eq("key", "ai").maybeSingle();
+  const model = (data?.value as { model?: string } | undefined)?.model;
+  return model && isKnownModel(model) ? model : DEFAULT_AI_MODEL;
+}
+
+export async function getExtensionTokens(profileId: string): Promise<ExtensionToken[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("extension_tokens")
+    .select("id,label,created_at,last_used_at,revoked")
+    .eq("profile_id", profileId)
+    .eq("revoked", false)
+    .order("created_at", { ascending: false });
+  return (data as ExtensionToken[]) ?? [];
 }

@@ -1,4 +1,4 @@
-# Prospecting OS — Phase 1 (Core CRM)
+# Prospecting OS
 
 DM Flows' BDR prospecting platform. This is the Phase 1 scaffold from the
 [Prospecting OS Blueprint](../scratchpad) memo: real auth, roles, campaigns,
@@ -36,12 +36,13 @@ what broke and it gets fixed fast.
 2. **Run the schema.** Open the SQL Editor in your Supabase project, paste in the contents of
    `supabase/migrations/0001_init.sql`, and run it. This creates every table, the RLS policies, and
    seeds the 20 lifecycle stages + the industry/service-line lists from the blueprint.
+2b. **Run the second migration.** Paste `supabase/migrations/0002_prospect_workspace.sql` into the SQL Editor and run it. It adds the prospect workspace fields, the AI playbook tables, the extension token functions and the extended lifecycle auto-advance. Safe to re-run.
 3. **Copy environment variables.**
    ```bash
    cp .env.example .env.local
    ```
-   Fill in `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` from your Supabase
-   project's Settings → API page.
+   Fill in `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` (the publishable key works) from your Supabase
+   project's Settings → API page. Also set `ANTHROPIC_API_KEY` (Extract & draft / Suggest) and `SUPABASE_SERVICE_ROLE_KEY` (Team → Add team member).
 4. **Install dependencies** (needs Node.js 18.18+ — install from [nodejs.org](https://nodejs.org) first if
    `node -v` doesn't work):
    ```bash
@@ -59,6 +60,17 @@ what broke and it gets fixed fast.
    Editor, open `profiles`, find your row, and set `role` to `admin` and `status` to `active` by hand,
    once. After that, the Team page lets you manage everyone else's role from the UI.
 
+## Prospect workspace, AI playbook, Chrome extension
+
+- **Prospects** open as a 3-pane workspace: prospect list, profile + AI gaps + message sequence, and an
+  activity panel (mark lead, suggest next message, log a message, timeline). Add prospects one by one
+  or with **Import CSV**.
+- **AI Playbook** (admin): choose the Claude model and write the instructions and sequence steps for
+  each channel. **Preferences** (everyone): personal instructions per channel, layered on the admin's,
+  plus Chrome extension tokens.
+- **Chrome extension** lives in `extension/` — see `extension/README.md`. It only reads a LinkedIn
+  page when you click Capture.
+
 ## Project layout
 
 ```
@@ -74,6 +86,6 @@ supabase/migrations/    SQL schema, RLS policies, seed data
 
 ## Deploying
 
-Push this to a GitHub repo and import it into Vercel — it needs the same two
-`NEXT_PUBLIC_SUPABASE_*` env vars set in the Vercel project settings.
-Nothing else required for Phase 1 to go live.
+Push this to a GitHub repo and import it into Vercel — set the same env vars from `.env.example`
+(Supabase URL and key, `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY`) in the Vercel project
+settings. Point the Chrome extension's App URL at the deployed domain.

@@ -1,11 +1,14 @@
 import Link from "next/link";
 import type { Profile } from "@/types/database";
 import { SignOutButton } from "@/components/SignOutButton";
+import { CollapsiblePane } from "@/components/CollapsiblePane";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/prospects", label: "Prospects" },
   { href: "/campaigns", label: "Campaigns" },
+  { href: "/preferences", label: "Preferences" },
+  { href: "/playbook", label: "AI Playbook", adminOnly: true },
   { href: "/team", label: "Team", adminOnly: true },
   { href: "/settings", label: "Settings", adminOnly: true },
 ];
@@ -14,9 +17,15 @@ export function Sidebar({ profile }: { profile: Profile }) {
   const items = NAV.filter((item) => !item.adminOnly || profile.role === "admin");
 
   return (
-    <aside className="flex w-56 flex-none flex-col border-r border-border bg-surface">
-      <div className="flex items-center gap-2 border-b border-border px-4 py-4">
-        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent font-bold text-white">P</div>
+    <CollapsiblePane
+      side="left"
+      label="Menu"
+      storageKey="pw-sidebar-collapsed"
+      expandedClassName="w-56 border-r border-border bg-surface"
+      contentClassName="flex flex-col"
+    >
+      <div className="flex items-center gap-2 border-b border-border py-4 pl-4 pr-12">
+        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent font-bold text-bg">P</div>
         <div>
           <div className="text-sm font-bold leading-tight">Prospecting OS</div>
           <div className="text-[10px] text-text-faint">DM Flows</div>
@@ -42,6 +51,6 @@ export function Sidebar({ profile }: { profile: Profile }) {
         </div>
         <SignOutButton />
       </div>
-    </aside>
+    </CollapsiblePane>
   );
 }

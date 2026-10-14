@@ -122,8 +122,59 @@ export interface Prospect {
   hubspot_contact_id: string | null;
   hubspot_company_id: string | null;
   hubspot_deal_id: string | null;
+  linkedin_company_url: string | null;
+  profile_text: string | null;
+  company_text: string | null;
+  company_blurb: string | null;
+  profile_captured_at: string | null;
+  company_captured_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface PlaybookStep {
+  key: string;
+  label: string;
+  hint?: string;
+  max_chars?: number;
+  instruction?: string;
+}
+
+export interface ChannelPlaybook {
+  channel: ChannelKey;
+  instructions: string;
+  steps: PlaybookStep[];
+  updated_at: string;
+}
+
+export interface BdrInstruction {
+  profile_id: string;
+  channel: ChannelKey;
+  instructions: string;
+}
+
+export interface SequenceStep {
+  key: string;
+  body: string;
+}
+
+export interface ProspectSequence {
+  id: string;
+  prospect_id: string;
+  channel: ChannelKey;
+  gaps: string[];
+  rationale: string | null;
+  steps: SequenceStep[];
+  model: string | null;
+  updated_at: string;
+}
+
+export interface ExtensionToken {
+  id: string;
+  label: string | null;
+  created_at: string;
+  last_used_at: string | null;
+  revoked: boolean;
 }
 
 export interface Activity {
