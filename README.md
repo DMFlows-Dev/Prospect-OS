@@ -12,7 +12,7 @@ HubSpot sync (Phase 4), and the full analytics/leaderboard suite (Phase 5).
 The database already has the tables Phase 4 needs (`hubspot_sync_logs`) so
 that phase is additive, not a migration.
 
-## Stack
+## Stack 
 
 Next.js 14 (App Router) + TypeScript + Tailwind, Supabase (Postgres, Auth,
 Row Level Security) as the backend. No separate API server in this phase —
